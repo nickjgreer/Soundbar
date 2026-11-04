@@ -42,8 +42,10 @@ button,label.file{font:inherit;padding:10px 16px;border-radius:8px;border:1px so
 button.alt,label.file{background:transparent;color:var(--ink)}
 button:focus-visible,label.file:focus-within{outline:3px solid var(--mid);outline-offset:2px}
 input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
-#readout{font-family:Georgia,serif;font-size:1.25rem;margin:0 0 12px}
+#readout,#readout2{font-family:Georgia,serif;font-size:1.25rem;margin:0 0 6px}
+#readout2{margin-bottom:12px;color:var(--muted)}
 #readout b{color:var(--peak)}
+#readout2 b{color:var(--peak);opacity:.7}
 #status{color:var(--muted);min-height:1.5em;margin:6px 0 0}
 </style>
 </head>
@@ -53,7 +55,8 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
   <p class="lede">Tall bars mean loud. Left is deep, low-pitched sound; right is high and squeaky. The tallest bar is the loudest pitch right now.</p>
 
   <div class="panel">
-    <p id="readout" aria-live="polite">Loudest pitch: <b>–</b></p>
+    <p id="readout" aria-live="polite">Loudest pitch now: <b>–</b></p>
+    <p id="readout2">Ghost marker pitch (last 15 s): <b>–</b></p>
     <canvas id="c" role="img" aria-label="Live graph of sound loudness at each pitch"></canvas>
   </div>
 
@@ -69,7 +72,7 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
 <script>
 (function(){
   var canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
-  var status=document.getElementById('status'), readout=document.querySelector('#readout b');
+  var status=document.getElementById('status'), readout=document.querySelector('#readout b'), readout2=document.querySelector('#readout2 b');
   var audio=null, analyser=null, data=null, source=null, stream=null, osc=null, el=null, raf=0;
   var MAXHZ=5000, ghost=null, gStart=0;
 
@@ -170,7 +173,8 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
     } else readout.textContent='–';
     var now=performance.now();
     if(ghost&&now-gStart>15000) ghost=null;
-    if(maxV>0.15&&(!ghost||maxV>ghost.v)){ if(!ghost) gStart=now; ghost={i:maxI,v:maxV}; }
+    if(maxV>0.15&&(!ghost||maxV>ghost.v)){ if(!ghost) gStart=now; ghost={i:maxI,v:maxV,hz:hz}; }
+    readout2.textContent=ghost?noteName(ghost.hz)+' (about '+label(ghost.hz)+')':'–';
     if(ghost){
       ctx.globalAlpha=0.6; ctx.fillStyle=css('--peak');
       ctx.fillRect(ghost.i*bw+1,ph-ghost.v*ph-5,bw-2,3);
