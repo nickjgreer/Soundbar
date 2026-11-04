@@ -174,7 +174,7 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
     var now=performance.now();
     if(ghost&&now-gStart>15000) ghost=null;
     if(maxV>0.15&&(!ghost||maxV>ghost.v)){ if(!ghost) gStart=now; ghost={i:maxI,v:maxV,hz:hz}; }
-    readout2.textContent=ghost?noteName(ghost.hz)+' (about '+label(ghost.hz)+')':'–';
+    readout2.textContent=ghost?noteName(ghost.hz)+' (about '+label(ghost.hz)+') and approx. '+Math.round(ghost.v*70)+' dB':'–';
     if(ghost){
       ctx.globalAlpha=0.6; ctx.fillStyle=css('--peak');
       ctx.fillRect(ghost.i*bw+1,ph-ghost.v*ph-5,bw-2,3);
