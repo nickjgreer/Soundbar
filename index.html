@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sound Bars">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#0f1a17">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-512.png">
+<link rel="manifest" href="manifest.json">
+<title>What does this sound look like?</title>
+<style>
+:root{
+  --bg:#f3f6f4; --panel:#ffffff; --ink:#16231f; --muted:#5d6f69; --line:#cfdad5;
+  --low:#2a6f97; --mid:#2f9e8f; --high:#e9a23b; --peak:#c8402e;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1a17; --panel:#17261f; --ink:#e7f1ed; --muted:#93a9a1; --line:#2a3d36;
+    --low:#5aa9d6; --mid:#4cc9b4; --high:#f0b556; --peak:#ff7a63;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1a17; --panel:#17261f; --ink:#e7f1ed; --muted:#93a9a1; --line:#2a3d36;
+  --low:#5aa9d6; --mid:#4cc9b4; --high:#f0b556; --peak:#ff7a63;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;line-height:1.5}
+main{max-width:860px;margin:0 auto;padding:24px 16px 40px}
+h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(1.6rem,5vw,2.3rem);margin:0 0 6px;font-weight:700}
+p.lede{color:var(--muted);margin:0 0 20px;max-width:60ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+canvas{display:block;width:100%;height:320px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+button,label.file{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);cursor:pointer}
+button.alt,label.file{background:transparent;color:var(--ink)}
+button:focus-visible,label.file:focus-within{outline:3px solid var(--mid);outline-offset:2px}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+#readout{font-family:Georgia,serif;font-size:1.25rem;margin:0 0 12px}
+#readout b{color:var(--peak)}
+#status{color:var(--muted);min-height:1.5em;margin:6px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>What does this sound look like?</h1>
+  <p class="lede">Tall bars mean loud. Left is deep, low-pitched sound; right is high and squeaky. The tallest bar is the loudest pitch right now.</p>
+
+  <div class="panel">
+    <p id="readout" aria-live="polite">Loudest pitch: <b>–</b></p>
+    <canvas id="c" role="img" aria-label="Live graph of sound loudness at each pitch"></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="mic">Listen with microphone</button>
+    <button id="tone" class="alt">Play a test tone</button>
+    <label class="file">Open an audio file<input id="file" type="file" accept="audio/*"></label>
+    <button id="stop" class="alt">Stop</button>
+  </div>
+  <p id="status">Press a button to start. Try whistling, humming or clapping.</p>
+</main>
+
+<script>
+(function(){
+  var canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+  var status=document.getElementById('status'), readout=document.querySelector('#readout b');
+  var audio=null, analyser=null, data=null, source=null, stream=null, osc=null, el=null, raf=0;
+  var MAXHZ=5000;
+
+  function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+  function setStatus(t){status.textContent=t}
+
+  function ensureCtx(){
+    if(!audio){
+      audio=new (window.AudioContext||window.webkitAudioContext)();
+      analyser=audio.createAnalyser();
+      analyser.fftSize=4096;
+      analyser.minDecibels=-100; analyser.maxDecibels=-30;
+      analyser.smoothingTimeConstant=0.8;
+      data=new Uint8Array(analyser.frequencyBinCount);
+    }
+    if(audio.state==='suspended') audio.resume();
+  }
+  function stopAll(){
+    if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}
+    if(osc){try{osc.stop()}catch(e){}osc=null}
+    if(el){el.pause();el=null}
+    if(source){try{source.disconnect()}catch(e){}source=null}
+    try{analyser&&analyser.disconnect()}catch(e){}
+  }
+  function start(node,toSpeakers){
+    node.connect(analyser);
+    if(toSpeakers) analyser.connect(audio.destination);
+    if(!raf) draw();
+  }
+
+  document.getElementById('mic').onclick=function(){
+    stopAll(); ensureCtx();
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setStatus('This browser or page does not allow microphone access. Try the test tone or an audio file.');return}
+    navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}}).then(function(s){
+      stream=s; source=audio.createMediaStreamSource(s); start(source,false);
+      setStatus('Listening. Make some noise.');
+    }).catch(function(){setStatus('Microphone blocked. Allow it in your browser, or try the test tone or an audio file.')});
+  };
+  document.getElementById('tone').onclick=function(){
+    stopAll(); ensureCtx();
+    osc=audio.createOscillator(); osc.type='sine'; osc.frequency.value=440;
+    var g=audio.createGain(); g.gain.value=0.15; osc.connect(g);
+    osc.start(); g.connect(analyser); analyser.connect(audio.destination);
+    if(!raf) draw();
+    var f=440; setStatus('Playing 440 Hz (the note A). Watch the single tall bar.');
+    var n=0; osc.__t=setInterval(function(){n++; f=[440,880,220,660][n%4]; if(osc)osc.frequency.value=f; else clearInterval(this)},2500);
+  };
+  document.getElementById('file').onchange=function(e){
+    var f=e.target.files[0]; if(!f) return;
+    stopAll(); ensureCtx();
+    el=new Audio(URL.createObjectURL(f)); el.loop=true;
+    source=audio.createMediaElementSource(el); start(source,true);
+    el.play(); setStatus('Playing '+f.name);
+  };
+  document.getElementById('stop').onclick=function(){stopAll();setStatus('Stopped.');readout.textContent='–'};
+
+  function fit(){
+    var r=canvas.getBoundingClientRect(), d=window.devicePixelRatio||1;
+    canvas.width=r.width*d; canvas.height=r.height*d; ctx.setTransform(d,0,0,d,0,0);
+  }
+  window.addEventListener('resize',fit); fit();
+
+  function label(hz){return hz>=1000?(hz/1000).toFixed(1)+' kHz':Math.round(hz)+' Hz'}
+  var NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function noteName(hz){var m=Math.round(69+12*Math.log2(hz/440));return NOTES[((m%12)+12)%12]+(Math.floor(m/12)-1)}
+
+  function draw(){
+    raf=requestAnimationFrame(draw);
+    var W=canvas.clientWidth,padL=46,w=W-padL,h=canvas.clientHeight,padB=26;
+    ctx.clearRect(0,0,W,h);
+    ctx.save(); ctx.translate(padL,0);
+    var ready=analyser&&(stream||osc||el);
+    if(ready) analyser.getByteFrequencyData(data); else if(data) data.fill(0);
+    if(!data){ctx.restore();return}
+    var nyq=audio.sampleRate/2, bins=Math.min(data.length,Math.floor(MAXHZ/nyq*data.length));
+    var bars=64, per=bins/bars, bw=w/bars, ph=h-padB;
+    ctx.font='12px sans-serif'; ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.lineWidth=1;
+    [-40,-60,-80].forEach(function(db){
+      var gy=Math.round(ph-((db+100)/70)*ph)+0.5;
+      ctx.strokeStyle=css('--line'); ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke();
+      ctx.fillStyle=css('--muted'); ctx.fillText((db+100)+' dB',-6,gy);
+    });
+    var maxV=0,maxI=0;
+    for(var i=0;i<bars;i++){
+      var s=0; for(var j=0;j<per;j++) s+=data[Math.floor(i*per+j)]; var v=s/per/255;
+      if(v>maxV){maxV=v;maxI=i}
+      var t=i/bars;
+      ctx.fillStyle=t<0.2?css('--low'):t<0.55?css('--mid'):css('--high');
+      var bh=v*ph; ctx.fillRect(i*bw+1,ph-bh,bw-2,bh);
+    }
+    if(maxV>0.15){
+      ctx.fillStyle=css('--peak'); var bh2=maxV*ph; ctx.fillRect(maxI*bw+1,ph-bh2,bw-2,bh2);
+      var pk=0,pv=0,lo=Math.ceil(60/nyq*data.length);
+      for(var q=lo;q<bins;q++){if(data[q]>pv){pv=data[q];pk=q}}
+      var hz=pk*nyq/data.length;
+      readout.textContent=noteName(hz)+' (about '+label(hz)+')';
+    } else readout.textContent='–';
+    ctx.fillStyle=css('--muted'); ctx.font='12px sans-serif'; ctx.textBaseline='bottom';
+    [0,1000,2000,3000,4000,5000].forEach(function(f,k){
+      var x=f/MAXHZ*w; ctx.textAlign=k===0?'left':k===5?'right':'center';
+      ctx.fillText(f===0?'0':(f/1000)+' kHz',x,h-4);
+    });
+    ctx.restore();
+  }
+  draw();
+})();
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}
+</script>
+</body>
+</html>
