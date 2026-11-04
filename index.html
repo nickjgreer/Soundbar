@@ -71,7 +71,7 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
   var canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
   var status=document.getElementById('status'), readout=document.querySelector('#readout b');
   var audio=null, analyser=null, data=null, source=null, stream=null, osc=null, el=null, raf=0;
-  var MAXHZ=5000;
+  var MAXHZ=5000, ghost=null, gStart=0;
 
   function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
   function setStatus(t){status.textContent=t}
@@ -88,6 +88,7 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
     if(audio.state==='suspended') audio.resume();
   }
   function stopAll(){
+    ghost=null;
     if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}
     if(osc){try{osc.stop()}catch(e){}osc=null}
     if(el){el.pause();el=null}
@@ -167,6 +168,14 @@ input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
       var hz=pk*nyq/data.length;
       readout.textContent=noteName(hz)+' (about '+label(hz)+')';
     } else readout.textContent='–';
+    var now=performance.now();
+    if(ghost&&now-gStart>15000) ghost=null;
+    if(maxV>0.15&&(!ghost||maxV>ghost.v)){ if(!ghost) gStart=now; ghost={i:maxI,v:maxV}; }
+    if(ghost){
+      ctx.globalAlpha=0.6; ctx.fillStyle=css('--peak');
+      ctx.fillRect(ghost.i*bw+1,ph-ghost.v*ph-5,bw-2,3);
+      ctx.globalAlpha=1;
+    }
     ctx.fillStyle=css('--muted'); ctx.font='12px sans-serif'; ctx.textBaseline='bottom';
     [0,1000,2000,3000,4000,5000].forEach(function(f,k){
       var x=f/MAXHZ*w; ctx.textAlign=k===0?'left':k===5?'right':'center';
